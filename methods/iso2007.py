@@ -123,7 +123,8 @@ def analyze_iso2007(
             level[i + 2]
         ])
 
-        if current <= local_noise:
+        # Le pic doit dépasser le bruit local d'au moins 3 dB
+        if current - local_noise < 3:
             continue
 
         cb_low, cb_high, cb_width = (
@@ -138,17 +139,45 @@ def analyze_iso2007(
             (np.abs(freq - fc) > 10)
         )
 
+
         if np.sum(mask) < 5:
             continue
 
-        Lpn = (
-            10 * np.log10(
-                np.mean(
-                    10 ** (
-                        level[mask] / 10
-                    )
-                )
+# ==========test==========
+#
+        if 240 <= fc <= 260:
+
+            print(
+                f"fc={fc:.1f}"
             )
+
+            print(
+                f"Nb bins={len(level[mask])}"
+            )
+
+            print(
+                f"min={np.min(level[mask]):.1f}"
+            )
+
+            print(
+                f"max={np.max(level[mask]):.1f}"
+            )
+
+            print(
+                f"p90={np.percentile(level[mask],90):.1f}"
+            )
+#
+#=========================
+
+        # Bruit de masquage
+        noise_levels = level[mask]
+
+
+
+        # niveau représentatif du bruit de fond
+        Lpn = np.percentile(
+            noise_levels,
+            90
         )
 
         tone_mask = (
@@ -177,16 +206,16 @@ def analyze_iso2007(
             delta_Lta
         )
 
-    rows.append(
-        {
-            "frequency": fc,
-            "Lpt": Lpt,
-            "Lpn": Lpn,
-            "delta_Lta": delta_Lta,
-            "critical_band": cb_width,
-            "kt": kt
-        }
-    )
+        rows.append(
+            {
+                "frequency": fc,
+                "Lpt": Lpt,
+                "Lpn": Lpn,
+                "delta_Lta": delta_Lta,
+                "critical_band": cb_width,
+                "kt": kt
+            }
+        )
 
     # =====================================================
     # AUCUN CANDIDAT
@@ -214,6 +243,39 @@ def analyze_iso2007(
 
     result_df = pd.DataFrame(rows)
 
+    # Trier du plus audible au moins audible
+    result_df = result_df.sort_values(
+        "delta_Lta",
+        ascending=False
+    )
+
+    # Éliminer les doublons fréquentiels proches
+    filtered_rows = []
+
+    for _, row in result_df.iterrows():
+
+        keep = True
+
+        for kept in filtered_rows:
+            if abs(
+                row["frequency"]
+                - kept["frequency"]
+            ) < 20:
+                keep = False
+                break
+
+        if keep:
+            filtered_rows.append(
+                row.to_dict()
+            )
+
+    result_df = pd.DataFrame(filtered_rows)
+
+    result_df = result_df.sort_values(
+        "delta_Lta",
+        ascending=False
+    )
+        
     best = result_df.loc[
         result_df["delta_Lta"].idxmax()
     ]
